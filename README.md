@@ -1,1 +1,1 @@
-# sql-zerotrust-proxy
+# pg-zerotrust
