@@ -1,6 +1,10 @@
 version: '3.1'
 
 services:
+  nginx:
+    image: nginx
+    ports:
+      - 8080:80
   postgres:
     image: postgres
     environment:

@@ -2,12 +2,18 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net"
-	"os"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
+
+const BufferSize int = 1
+
+var port string
+var upstream string
 
 var root = &cobra.Command{
 	Use:  "pg-zerotrust",
@@ -17,19 +23,14 @@ var root = &cobra.Command{
 func init() {
 	root.Version = "0.1.0"
 
-	root.Flags().StringP("port", "p", "", "port to bind to")
-	root.Flags().StringP("upstream", "u", "", "upstream address to bind to")
+	root.Flags().StringVarP(&port, "port", "p", "", "port to bind to")
+	root.Flags().StringVarP(&upstream, "upstream", "u", "", "upstream address to bind to")
 
 	root.MarkFlagRequired("port")
 	root.MarkFlagRequired("upstream")
 }
 
 func run(cmd *cobra.Command, args []string) error {
-	port, err := cmd.Flags().GetString("port")
-	if err != nil {
-		return err
-	}
-
 	addr := fmt.Sprintf(":%s", port)
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -48,15 +49,71 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 }
 
-func handle(conn net.Conn) {
-	defer conn.Close()
+func handle(client net.Conn) {
+	defer client.Close()
 
-	log.Printf("Accepted connection")
+	log.Printf("Received new client connection. Initiating upstream connection to %s", upstream)
+
+	server, err := net.Dial("tcp", upstream)
+	if err != nil {
+		log.Printf("Failed to create upstream connection to %s", upstream)
+		return
+	}
+
+	defer server.Close()
+
+	group := errgroup.Group{}
+	group.Go(func() error {
+		for {
+			buffer := make([]byte, BufferSize)
+			n, err := io.ReadFull(client, buffer)
+
+			if err == io.EOF {
+				return nil
+			} else if err != nil && err != io.ErrUnexpectedEOF {
+				return err
+			}
+
+			log.Printf("Successfully read %d bytes from client: %v", n, buffer)
+
+			n, err = server.Write(buffer)
+			if err != nil {
+				return err
+			}
+
+			log.Printf("Successfully wrote %d bytes to server: %v", n, buffer)
+		}
+	})
+	group.Go(func() error {
+		for {
+			buffer := make([]byte, BufferSize)
+			n, err := io.ReadFull(server, buffer)
+
+			if err == io.EOF {
+				return nil
+			} else if err != nil && err != io.ErrUnexpectedEOF {
+				return err
+			}
+
+			log.Printf("Successfully read %d bytes from server: %v", n, buffer)
+
+			n, err = client.Write(buffer)
+			if err != nil {
+				return err
+			}
+
+			log.Printf("Successfully wrote %d bytes to client: %v", n, buffer)
+		}
+	})
+
+	err = group.Wait()
+	if err != nil {
+		log.Println(err)
+	}
 }
 
 func Execute() {
 	if err := root.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		log.Fatal(err)
 	}
 }
