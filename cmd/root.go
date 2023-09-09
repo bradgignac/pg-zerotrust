@@ -100,20 +100,9 @@ func handle(client net.Conn) {
 	})
 	group.Go(func() error {
 		for {
-			// TODO: parse client messages
-			buffer := make([]byte, BufferSize)
-			n, err := io.ReadFull(upstream, buffer)
-
-			if err != nil {
+			if err := proxyUpstreamMessageToClient(client, upstream); err != nil {
 				return err
 			}
-
-			n, err = client.Write(buffer)
-			if err != nil {
-				return err
-			}
-
-			logger.Info("Successfully proxied message to client", "bytes", n, "buffer", buffer)
 		}
 	})
 
@@ -187,6 +176,22 @@ func proxyClientMessageToUpstream(client io.Reader, upstream io.Writer) error {
 	}
 
 	logger.Info("Successfully proxied message to upstream", "bytes", n, "msg", msg)
+
+	return nil
+}
+
+func proxyUpstreamMessageToClient(client io.Writer, upstream io.Reader) error {
+	msg, err := message.ParseMessage(upstream)
+	if err != nil {
+		return err
+	}
+
+	n, err := client.Write(msg.Bytes())
+	if err != nil {
+		return err
+	}
+
+	logger.Info("Successfully proxied message to client", "bytes", n, "msg", msg)
 
 	return nil
 }
