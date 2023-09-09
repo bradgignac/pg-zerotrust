@@ -57,8 +57,6 @@ func TestParseSSLRequestBytes(t *testing.T) {
 	assert.Equal(t, expected, msg.Bytes())
 }
 
-// TODO: Parse SSLResponse
-
 func TestParseStartupMessage(t *testing.T) {
 	raw := make([]byte, 8)
 	binary.BigEndian.PutUint32(raw, 8)

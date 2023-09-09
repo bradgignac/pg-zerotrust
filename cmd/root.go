@@ -93,22 +93,9 @@ func handle(client net.Conn) {
 	group := errgroup.Group{}
 	group.Go(func() error {
 		for {
-			// TODO: parse upstream messages
-			buffer := make([]byte, BufferSize)
-			_, err := io.ReadFull(client, buffer)
-
-			if err == io.EOF {
-				return nil
-			} else if err != nil && err != io.ErrUnexpectedEOF {
+			if err := proxyClientMessageToUpstream(client, upstream); err != nil {
 				return err
 			}
-
-			n, err := upstream.Write(buffer)
-			if err != nil {
-				return err
-			}
-
-			logger.Info("Successfully proxied message to upstream", "bytes", n, "buffer", buffer)
 		}
 	})
 	group.Go(func() error {
@@ -184,6 +171,22 @@ func proxyStartupMessage(client io.Reader, upstream io.Writer) error {
 	}
 
 	logger.Info("Successfully proxied StartupMessage to upstream", "msg", msg, "bytes", n)
+
+	return nil
+}
+
+func proxyClientMessageToUpstream(client io.Reader, upstream io.Writer) error {
+	msg, err := message.ParseMessage(client)
+	if err != nil {
+		return err
+	}
+
+	n, err := upstream.Write(msg.Bytes())
+	if err != nil {
+		return err
+	}
+
+	logger.Info("Successfully proxied message to upstream", "bytes", n, "msg", msg)
 
 	return nil
 }
